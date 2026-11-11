@@ -1,9 +1,21 @@
+import argparse
 import json
 import os
 from pathlib import Path
 import pandas as pd
 import torch
 from ultralytics import YOLO
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Create submission file for Edge AI Challenge")
+    parser.add_argument(
+        "--weights",
+        type=str,
+        default=None,
+        help="Path to YOLO weights checkpoint (.pt). If omitted, prioritizes yolo11s_qualifiers then newest best.pt.",
+    )
+    return parser.parse_args()
 
 
 def format_detection_result(result):
@@ -41,8 +53,10 @@ def count_boxes(df_det):
 
 
 def main():
+    args = parse_args()
+
     print("=" * 60)
-    print("TOI UU HOA SUY LUAN DETECTION (CONF=0.10, IOU=0.55, TTA=TRUE)")
+    print("TOI UU HOA SUY LUAN DETECTION (CONF=0.10, IOU=0.55, TTA=TRUE, IMGSZ=640)")
     print("=" * 60)
 
     base_dir = Path("D:/visual code/python/Edge_Ai2")
@@ -62,7 +76,7 @@ def main():
             df_old = pd.read_csv(main_sub_path)
             old_det = df_old[df_old["task_type"] == "DETECTION"]
             old_box_count, _ = count_boxes(old_det)
-            print(f"[+] So luong bounding boxes lan truoc (conf=0.25, no TTA): {old_box_count:,}")
+            print(f"[+] So luong bounding boxes lan truoc: {old_box_count:,}")
         except Exception as e:
             print(f"[!] Khong doc duoc file cu: {e}")
 
@@ -72,19 +86,31 @@ def main():
     print(f"[+] So luong dong sample_submission: {len(df_sample)}")
     print(f"[+] Cac cot: {df_sample.columns.tolist()}")
 
-    # 2. Tim kiem tat ca checkpoint best.pt trong runs/ va chon checkpoint moi nhat
-    runs_dir = base_dir / "runs"
-    candidates = list(runs_dir.rglob("best.pt"))
-    if not candidates:
-        raise FileNotFoundError(f"Khong tim thay checkpoint best.pt nao trong {runs_dir}")
+    # 2. Xac dinh checkpoint YOLO
+    chosen_ckpt = None
+    if args.weights:
+        custom_ckpt = Path(args.weights)
+        if custom_ckpt.exists():
+            chosen_ckpt = custom_ckpt
+            print(f"[+] Su dung checkpoint chi dinh tu tham so --weights: {chosen_ckpt}")
+        else:
+            print(f"[!] Khong tim thay checkpoint chi dinh: {custom_ckpt}, chuyen sang tim tu dong.")
 
-    candidates.sort(key=lambda p: p.stat().st_mtime, reverse=True)
-    print(f"[+] Danh sach cac checkpoint tim thay ({len(candidates)}):")
-    for c in candidates:
-        print(f"    - {c} (Kich thuoc: {c.stat().st_size:,} bytes)")
+    if chosen_ckpt is None:
+        yolo11s_ckpt = base_dir / "runs" / "yolo11s_qualifiers" / "weights" / "best.pt"
+        if yolo11s_ckpt.exists():
+            chosen_ckpt = yolo11s_ckpt
+            print(f"[+] Uu tien chon checkpoint YOLO11s: {chosen_ckpt}")
+        else:
+            runs_dir = base_dir / "runs"
+            candidates = list(runs_dir.rglob("best.pt"))
+            if not candidates:
+                raise FileNotFoundError(f"Khong tim thay bat ky checkpoint best.pt nao trong {runs_dir}")
+            candidates.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+            chosen_ckpt = candidates[0]
+            print(f"[+] Da tu dong chon checkpoint moi nhat: {chosen_ckpt}")
 
-    chosen_ckpt = candidates[0]
-    print(f"[+] Da chon checkpoint tot nhat/moi nhat: {chosen_ckpt}")
+    print(f"[+] Checkpoint duoc su dung: {chosen_ckpt}")
 
     # 3. Chay du doan voi bo tham so toi uu
     device = 0 if torch.cuda.is_available() else "cpu"
@@ -95,14 +121,14 @@ def main():
     print("    - conf = 0.10 (ha nguong tu tin de tang Recall)")
     print("    - iou = 0.55 (tang nguong de giu vat the sat nhau)")
     print("    - augment = True (bat Test-Time Augmentation - TTA)")
-    print("    - imgsz = 320")
+    print("    - imgsz = 640 (nang cao do phan giai)")
     print(f"[+] Dang du doan Detection tren toan bo anh tai {test_img_dir} (stream=True)...")
 
     detection_preds = {}
     results = model.predict(
         source=str(test_img_dir),
         stream=True,
-        imgsz=320,
+        imgsz=640,
         conf=0.10,
         iou=0.55,
         augment=True,
@@ -181,8 +207,8 @@ def main():
     new_box_count, new_empty_imgs = count_boxes(det_new)
 
     print(f"\n[+] THONG KE BOUNDING BOXES:")
-    print(f"    - So boxes truoc toi uu (conf=0.25, no TTA): {old_box_count:,}")
-    print(f"    - So boxes sau toi uu  (conf=0.10, TTA=True): {new_box_count:,}")
+    print(f"    - So boxes truoc toi uu: {old_box_count:,}")
+    print(f"    - So boxes sau toi uu:   {new_box_count:,}")
     diff_boxes = new_box_count - old_box_count
     pct_increase = (diff_boxes / old_box_count * 100) if old_box_count > 0 else 0
     print(f"    - Tang them: +{diff_boxes:,} boxes (+{pct_increase:.2f}%)")
