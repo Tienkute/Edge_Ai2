@@ -1,4 +1,5 @@
 import json
+import os
 from pathlib import Path
 import pandas as pd
 import torch
@@ -25,9 +26,23 @@ def format_detection_result(result):
     return json.dumps(objects, separators=(",", ":"))
 
 
+def count_boxes(df_det):
+    total = 0
+    empty_cnt = 0
+    for pred in df_det["prediction"]:
+        try:
+            objs = json.loads(pred)
+            total += len(objs)
+            if len(objs) == 0:
+                empty_cnt += 1
+        except Exception:
+            pass
+    return total, empty_cnt
+
+
 def main():
     print("=" * 60)
-    print("NHIEM VU 7: GHEP KET QUA VA XUAT SUBMISSION.CSV CHUAN KAGGLE")
+    print("TOI UU HOA SUY LUAN DETECTION (CONF=0.10, IOU=0.55, TTA=TRUE)")
     print("=" * 60)
 
     base_dir = Path("D:/visual code/python/Edge_Ai2")
@@ -36,7 +51,20 @@ def main():
     test_img_dir = base_dir / "data" / "test" / "images"
     sub_dir = base_dir / "outputs" / "submissions"
     sub_dir.mkdir(parents=True, exist_ok=True)
-    final_sub_path = sub_dir / "submission.csv"
+
+    opt_sub_path = sub_dir / "submission_opt_conf10_tta.csv"
+    main_sub_path = sub_dir / "submission.csv"
+
+    # Dem so bbox cu neu co file submission.csv cu
+    old_box_count = 0
+    if main_sub_path.exists():
+        try:
+            df_old = pd.read_csv(main_sub_path)
+            old_det = df_old[df_old["task_type"] == "DETECTION"]
+            old_box_count, _ = count_boxes(old_det)
+            print(f"[+] So luong bounding boxes lan truoc (conf=0.25, no TTA): {old_box_count:,}")
+        except Exception as e:
+            print(f"[!] Khong doc duoc file cu: {e}")
 
     # 1. Kiem tra file sample_submission.csv
     print(f"[+] Kiem tra sample_submission: {sample_sub_path}")
@@ -44,33 +72,40 @@ def main():
     print(f"[+] So luong dong sample_submission: {len(df_sample)}")
     print(f"[+] Cac cot: {df_sample.columns.tolist()}")
 
-    # 2. Xac dinh checkpoint YOLO tot nhat
-    ckpt_fast_full = base_dir / "runs" / "yolo11n_qualifiers_full" / "weights" / "best.pt"
-    ckpt_smoke = base_dir / "runs" / "yolo11n_qualifiers" / "weights" / "best.pt"
+    # 2. Tim kiem tat ca checkpoint best.pt trong runs/ va chon checkpoint moi nhat
+    runs_dir = base_dir / "runs"
+    candidates = list(runs_dir.rglob("best.pt"))
+    if not candidates:
+        raise FileNotFoundError(f"Khong tim thay checkpoint best.pt nao trong {runs_dir}")
 
-    if ckpt_fast_full.exists():
-        chosen_ckpt = ckpt_fast_full
-        print(f"[+] Su dung checkpoint YOLO full: {chosen_ckpt}")
-    elif ckpt_smoke.exists():
-        chosen_ckpt = ckpt_smoke
-        print(f"[+] Su dung checkpoint YOLO smoke: {chosen_ckpt}")
-    else:
-        raise FileNotFoundError(f"Khong tim thay checkpoint YOLO tai {ckpt_fast_full} hoac {ckpt_smoke}")
+    candidates.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+    print(f"[+] Danh sach cac checkpoint tim thay ({len(candidates)}):")
+    for c in candidates:
+        print(f"    - {c} (Kich thuoc: {c.stat().st_size:,} bytes)")
 
-    # 3. Chay du doan Detection tren tap test images
+    chosen_ckpt = candidates[0]
+    print(f"[+] Da chon checkpoint tot nhat/moi nhat: {chosen_ckpt}")
+
+    # 3. Chay du doan voi bo tham so toi uu
     device = 0 if torch.cuda.is_available() else "cpu"
     print(f"[+] Load model YOLO tu {chosen_ckpt} (device={device})...")
     model = YOLO(str(chosen_ckpt))
 
+    print("[+] CAU HINH TOI UU HOA SUY LUAN:")
+    print("    - conf = 0.10 (ha nguong tu tin de tang Recall)")
+    print("    - iou = 0.55 (tang nguong de giu vat the sat nhau)")
+    print("    - augment = True (bat Test-Time Augmentation - TTA)")
+    print("    - imgsz = 320")
     print(f"[+] Dang du doan Detection tren toan bo anh tai {test_img_dir} (stream=True)...")
-    detection_preds = {}
 
+    detection_preds = {}
     results = model.predict(
         source=str(test_img_dir),
         stream=True,
         imgsz=320,
-        conf=0.25,
-        iou=0.45,
+        conf=0.10,
+        iou=0.55,
+        augment=True,
         device=device,
         verbose=False,
     )
@@ -118,15 +153,21 @@ def main():
         })
 
     df_submission = pd.DataFrame(final_rows)
-    df_submission.to_csv(final_sub_path, index=False, encoding="utf-8")
-    print(f"[+] Da xuat file submission tai: {final_sub_path}")
-    print(f"[+] Tong so dong (khong tinh header): {len(df_submission)}")
 
-    # 6. Kiem tra xac thuc file submission
+    # Xuat ra file submission_opt_conf10_tta.csv
+    df_submission.to_csv(opt_sub_path, index=False, encoding="utf-8")
+    print(f"[+] Da xuat file submission toi uu tai: {opt_sub_path}")
+
+    # Ghi de vao file submission.csv
+    df_submission.to_csv(main_sub_path, index=False, encoding="utf-8")
+    print(f"[+] Da ghi de vao file submission chinh tai: {main_sub_path}")
+
+    # 6. Kiem tra xac thuc va thong ke so bounding boxes
     print("\n" + "=" * 60)
-    print("KIEM TRA XAC THUC SUBMISSION.CSV")
+    print("KIEM TRA XAC THUC VA THONG KE SO SANH")
     print("=" * 60)
-    with open(final_sub_path, "r", encoding="utf-8") as f:
+
+    with open(main_sub_path, "r", encoding="utf-8") as f:
         total_file_lines = sum(1 for _ in f)
     print(f"[+] Tong so dong trong file (tinh ca header): {total_file_lines} (Yeu cau: 8001)")
 
@@ -134,6 +175,18 @@ def main():
     empty_count = (df_submission["prediction"] == "").sum()
     print(f"[+] So gia tri null: {null_count}")
     print(f"[+] So gia tri rong: {empty_count}")
+
+    # Thong ke bounding boxes moi
+    det_new = df_submission[df_submission["task_type"] == "DETECTION"]
+    new_box_count, new_empty_imgs = count_boxes(det_new)
+
+    print(f"\n[+] THONG KE BOUNDING BOXES:")
+    print(f"    - So boxes truoc toi uu (conf=0.25, no TTA): {old_box_count:,}")
+    print(f"    - So boxes sau toi uu  (conf=0.10, TTA=True): {new_box_count:,}")
+    diff_boxes = new_box_count - old_box_count
+    pct_increase = (diff_boxes / old_box_count * 100) if old_box_count > 0 else 0
+    print(f"    - Tang them: +{diff_boxes:,} boxes (+{pct_increase:.2f}%)")
+    print(f"    - So anh co 0 vat the: {new_empty_imgs}")
 
     print("\n[+] 5 dong dau tien:")
     print(df_submission.head())
@@ -144,4 +197,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
