@@ -4,5 +4,7 @@ __pycache__/
 *.onnx
 runs/
 outputs/
+!outputs/predictions/
+!outputs/predictions/intent_predictions.csv
 data/
 *.zip
