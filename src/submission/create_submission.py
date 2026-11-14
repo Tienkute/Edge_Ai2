@@ -8,12 +8,41 @@ from ultralytics import YOLO
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Create submission file for Edge AI Challenge")
+    parser = argparse.ArgumentParser(description="Tao file submission cho Edge AI Challenge")
     parser.add_argument(
         "--weights",
         type=str,
-        default=None,
-        help="Path to YOLO weights checkpoint (.pt). If omitted, prioritizes yolo11s_qualifiers then newest best.pt.",
+        default="yolo11_micro_best.pt",
+        help="Duong dan den file trong so YOLO (mac dinh: yolo11_micro_best.pt tai thu muc goc)",
+    )
+    parser.add_argument(
+        "--imgsz",
+        type=int,
+        default=160,
+        help="Kich thuoc anh suy luan (mac dinh: 160)",
+    )
+    parser.add_argument(
+        "--conf",
+        type=float,
+        default=0.001,
+        help="Nguong confidence (mac dinh: 0.001 de vet toi da Recall cho mAP50)",
+    )
+    parser.add_argument(
+        "--iou",
+        type=float,
+        default=0.60,
+        help="Nguong NMS IoU (mac dinh: 0.60)",
+    )
+    parser.add_argument(
+        "--max_det",
+        type=int,
+        default=100,
+        help="So luong bounding box toi da moi anh (mac dinh: 100)",
+    )
+    parser.add_argument(
+        "--device",
+        default=0,
+        help="Thiet bi suy luan (mac dinh: 0)",
     )
     return parser.parse_args()
 
@@ -55,82 +84,66 @@ def count_boxes(df_det):
 def main():
     args = parse_args()
 
+    # Chuyen thu muc lam viec ve goc repo
+    base_dir = Path(__file__).resolve().parent.parent.parent
+    os.chdir(base_dir)
+
     print("=" * 60)
-    print("TOI UU HOA SUY LUAN DETECTION (CONF=0.10, IOU=0.55, TTA=TRUE, IMGSZ=640)")
+    print("SUY LUAN DETECTION YOLO11-MICRO VA GHEP FILE SUBMISSION")
     print("=" * 60)
 
-    base_dir = Path("D:/visual code/python/Edge_Ai2")
     sample_sub_path = base_dir / "data" / "sample_submission.csv"
     intent_pred_path = base_dir / "outputs" / "predictions" / "intent_predictions.csv"
     test_img_dir = base_dir / "data" / "test" / "images"
     sub_dir = base_dir / "outputs" / "submissions"
     sub_dir.mkdir(parents=True, exist_ok=True)
 
-    opt_sub_path = sub_dir / "submission_opt_conf10_tta.csv"
+    micro_sub_path = sub_dir / "submission_yolo11_micro.csv"
     main_sub_path = sub_dir / "submission.csv"
 
-    # Dem so bbox cu neu co file submission.csv cu
-    old_box_count = 0
-    if main_sub_path.exists():
-        try:
-            df_old = pd.read_csv(main_sub_path)
-            old_det = df_old[df_old["task_type"] == "DETECTION"]
-            old_box_count, _ = count_boxes(old_det)
-            print(f"[+] So luong bounding boxes lan truoc: {old_box_count:,}")
-        except Exception as e:
-            print(f"[!] Khong doc duoc file cu: {e}")
-
     # 1. Kiem tra file sample_submission.csv
-    print(f"[+] Kiem tra sample_submission: {sample_sub_path}")
+    print(f"[+] KIEM TRA SAMPLE_SUBMISSION: {sample_sub_path}")
     df_sample = pd.read_csv(sample_sub_path)
-    print(f"[+] So luong dong sample_submission: {len(df_sample)}")
-    print(f"[+] Cac cot: {df_sample.columns.tolist()}")
+    print(f"[+] SO LUONG DONG SAMPLE_SUBMISSION: {len(df_sample)}")
 
-    # 2. Xac dinh checkpoint YOLO
-    chosen_ckpt = None
-    if args.weights:
-        custom_ckpt = Path(args.weights)
-        if custom_ckpt.exists():
-            chosen_ckpt = custom_ckpt
-            print(f"[+] Su dung checkpoint chi dinh tu tham so --weights: {chosen_ckpt}")
-        else:
-            print(f"[!] Khong tim thay checkpoint chi dinh: {custom_ckpt}, chuyen sang tim tu dong.")
+    # 2. Xac dinh checkpoint YOLO (tro truc tiep yolo11_micro_best.pt o goc repo)
+    weights_path = Path(args.weights)
+    if not weights_path.is_absolute():
+        weights_path = base_dir / weights_path
 
-    if chosen_ckpt is None:
-        yolo11s_ckpt = base_dir / "runs" / "yolo11s_qualifiers" / "weights" / "best.pt"
-        if yolo11s_ckpt.exists():
-            chosen_ckpt = yolo11s_ckpt
-            print(f"[+] Uu tien chon checkpoint YOLO11s: {chosen_ckpt}")
-        else:
-            runs_dir = base_dir / "runs"
-            candidates = list(runs_dir.rglob("best.pt"))
-            if not candidates:
-                raise FileNotFoundError(f"Khong tim thay bat ky checkpoint best.pt nao trong {runs_dir}")
+    if not weights_path.exists():
+        print(f"[!] KHONG TIM THAY: {weights_path}, DANG TIM KIEM TRONG RUNS...")
+        candidates = list((base_dir / "runs").rglob("best.pt"))
+        if candidates:
             candidates.sort(key=lambda p: p.stat().st_mtime, reverse=True)
-            chosen_ckpt = candidates[0]
-            print(f"[+] Da tu dong chon checkpoint moi nhat: {chosen_ckpt}")
+            weights_path = candidates[0]
+            print(f"[+] DA CHON CHECKPOINT: {weights_path}")
+        else:
+            raise FileNotFoundError(f"Khong tim thay checkpoint YOLO tai {weights_path}")
 
-    print(f"[+] Checkpoint duoc su dung: {chosen_ckpt}")
+    print(f"[+] CHECKPOINT DUOC SU DUNG: {weights_path}")
 
-    # 3. Chay du doan voi bo tham so toi uu
-    device = 0 if torch.cuda.is_available() else "cpu"
-    print(f"[+] Load model YOLO tu {chosen_ckpt} (device={device})...")
-    model = YOLO(str(chosen_ckpt))
+    # 3. Chay suy luan voi cau hinh toi uu Recall cho mAP50
+    # imgsz=160, conf=0.001, iou=0.60, max_det=100, augment=True
+    device = args.device
+    if device == 0 and not torch.cuda.is_available():
+        print("[!] CUDA KHONG KHA DUNG, CHUYEN SANG CPU!")
+        device = "cpu"
 
-    print("[+] CAU HINH TOI UU HOA SUY LUAN:")
-    print("    - conf = 0.10 (ha nguong tu tin de tang Recall)")
-    print("    - iou = 0.55 (tang nguong de giu vat the sat nhau)")
-    print("    - augment = True (bat Test-Time Augmentation - TTA)")
-    print("    - imgsz = 640 (nang cao do phan giai)")
-    print(f"[+] Dang du doan Detection tren toan bo anh tai {test_img_dir} (stream=True)...")
+    print(f"[+] LOAD MODEL YOLO TU: {weights_path} (DEVICE={device})...")
+    model = YOLO(str(weights_path))
+
+    print(f"[+] CAU HINH SUY LUAN: IMGSZ={args.imgsz}, CONF={args.conf}, IOU={args.iou}, MAX_DET={args.max_det}, AUGMENT=TRUE, DEVICE={device}")
+    print(f"[+] DANG DU DOAN DETECTION TREN TOAN BO ANH TAI: {test_img_dir}...")
 
     detection_preds = {}
     results = model.predict(
         source=str(test_img_dir),
         stream=True,
-        imgsz=640,
-        conf=0.10,
-        iou=0.55,
+        imgsz=args.imgsz,
+        conf=args.conf,
+        iou=args.iou,
+        max_det=args.max_det,
         augment=True,
         device=device,
         verbose=False,
@@ -143,24 +156,28 @@ def main():
         detection_preds[sample_id] = json_pred
         count_det += 1
         if count_det % 1000 == 0:
-            print(f"[+] Da du doan xong {count_det}/4000 anh Detection...")
+            print(f"[+] DA DU DOAN XONG {count_det}/4000 ANH DETECTION...")
 
-    print(f"[+] Hoan thanh du doan {count_det} anh Detection.")
+    print(f"[+] HOAN THANH DU DOAN {count_det} ANH DETECTION.")
 
-    # 4. Doc ket qua Intent Predictions
-    print(f"[+] Dang doc du lieu Intent tu: {intent_pred_path}")
-    df_intent = pd.read_csv(intent_pred_path, encoding="utf-8")
-    intent_preds = dict(zip(df_intent["sample_id"], df_intent["prediction"]))
-    print(f"[+] So luong mau Intent doc duoc: {len(intent_preds)}")
+    # 4. Doc ket qua Intent Predictions (TextCNN)
+    print(f"[+] DANG DOC DU LIEU INTENT TU: {intent_pred_path}")
+    if intent_pred_path.exists():
+        df_intent = pd.read_csv(intent_pred_path, encoding="utf-8")
+        intent_preds = dict(zip(df_intent["sample_id"].astype(str), df_intent["prediction"]))
+        print(f"[+] SO LUONG MAU INTENT DOC DUOC: {len(intent_preds)}")
+    else:
+        print(f"[!] KHONG TIM THAY FILE INTENT: {intent_pred_path}, SE GAN MAC DINH OUT_OF_SCOPE")
+        intent_preds = {}
 
-    # 5. Ghep ket qua theo thu tu sample_submission.csv
-    print("[+] Dang ghep ket qua theo thu tu chuan...")
+    # 5. Ghep ket qua theo thu tu chuan cua sample_submission.csv
+    print("[+] DANG GHEP KET QUA THEO THU TU CHUAN CUA SAMPLE_SUBMISSION...")
     final_rows = []
     missing_count = 0
 
     for idx, row in df_sample.iterrows():
         t_type = row["task_type"]
-        s_id = row["sample_id"]
+        s_id = str(row["sample_id"])
 
         if t_type == "DETECTION":
             pred = detection_preds.get(s_id, "[]")
@@ -180,44 +197,39 @@ def main():
 
     df_submission = pd.DataFrame(final_rows)
 
-    # Xuat ra file submission_opt_conf10_tta.csv
-    df_submission.to_csv(opt_sub_path, index=False, encoding="utf-8")
-    print(f"[+] Da xuat file submission toi uu tai: {opt_sub_path}")
+    # Xuat file submission_yolo11_micro.csv
+    df_submission.to_csv(micro_sub_path, index=False, encoding="utf-8")
+    print(f"[+] DA XUAT FILE SUBMISSION YOLO11-MICRO TAI: {micro_sub_path}")
 
-    # Ghi de vao file submission.csv
+    # Dong thoi cap nhat vao file submission.csv chinh
     df_submission.to_csv(main_sub_path, index=False, encoding="utf-8")
-    print(f"[+] Da ghi de vao file submission chinh tai: {main_sub_path}")
+    print(f"[+] DA CAP NHAT FILE SUBMISSION CHINH TAI: {main_sub_path}")
 
-    # 6. Kiem tra xac thuc va thong ke so bounding boxes
+    # 6. Kiem tra xac thuc va thong ke
     print("\n" + "=" * 60)
-    print("KIEM TRA XAC THUC VA THONG KE SO SANH")
+    print("KIEM TRA XAC THUC VA THONG KE SUBMISSION")
     print("=" * 60)
 
-    with open(main_sub_path, "r", encoding="utf-8") as f:
+    with open(micro_sub_path, "r", encoding="utf-8") as f:
         total_file_lines = sum(1 for _ in f)
-    print(f"[+] Tong so dong trong file (tinh ca header): {total_file_lines} (Yeu cau: 8001)")
+    print(f"[+] TONG SO DONG TRONG FILE (TINH CA HEADER): {total_file_lines} (YEU CAU: 8001)")
 
     null_count = df_submission["prediction"].isnull().sum()
     empty_count = (df_submission["prediction"] == "").sum()
-    print(f"[+] So gia tri null: {null_count}")
-    print(f"[+] So gia tri rong: {empty_count}")
+    print(f"[+] SO GIA TRI NULL: {null_count}")
+    print(f"[+] SO GIA TRI RONG: {empty_count}")
 
-    # Thong ke bounding boxes moi
-    det_new = df_submission[df_submission["task_type"] == "DETECTION"]
-    new_box_count, new_empty_imgs = count_boxes(det_new)
+    det_part = df_submission[df_submission["task_type"] == "DETECTION"]
+    total_boxes, zero_box_imgs = count_boxes(det_part)
+    print(f"[+] TONG SO BOUNDING BOXES DETECTION: {total_boxes:,}")
+    print(f"[+] SO ANH DETECTION CO 0 VAT THE: {zero_box_imgs}")
 
-    print(f"\n[+] THONG KE BOUNDING BOXES:")
-    print(f"    - So boxes truoc toi uu: {old_box_count:,}")
-    print(f"    - So boxes sau toi uu:   {new_box_count:,}")
-    diff_boxes = new_box_count - old_box_count
-    pct_increase = (diff_boxes / old_box_count * 100) if old_box_count > 0 else 0
-    print(f"    - Tang them: +{diff_boxes:,} boxes (+{pct_increase:.2f}%)")
-    print(f"    - So anh co 0 vat the: {new_empty_imgs}")
-
-    print("\n[+] 5 dong dau tien:")
+    print("\n[+] 5 DONG DAU TIEN:")
     print(df_submission.head())
-    print("\n[+] 5 dong cuoi cung:")
+    print("\n[+] 5 DONG CUOI CUNG:")
     print(df_submission.tail())
+    print("=" * 60)
+    print("[+] HOAN TAT QUA TRINH TAO FILE SUBMISSION!")
     print("=" * 60)
 
 
