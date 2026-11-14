@@ -1,11 +1,11 @@
 # Ultralytics YOLO11 micro configuration for ESP32-S3
-# Target: Ultra-lightweight model for Edge AI
+# Target: Ultra-lightweight model for Edge AI (< 200k parameters)
 
 # Parameters
 nc: 7 # number of classes
 scales: # model compound scaling constants
   # [depth, width, max_channels]
-  micro: [0.33, 0.10, 1024]  # depth, width, max_channels
+  micro: [0.33, 0.10, 128]  # depth, width, max_channels (~180,037 params, 0.07 GFLOPs at imgsz=160)
 
 # YOLO11 backbone
 backbone:
