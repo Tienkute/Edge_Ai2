@@ -24,20 +24,20 @@ def parse_args():
     parser.add_argument(
         "--conf",
         type=float,
-        default=0.001,
-        help="Nguong confidence (mac dinh: 0.001 de vet toi da Recall cho mAP50)",
+        default=0.08,
+        help="Nguong confidence (mac dinh: 0.08 de loai bo box rac, toi uu hoa mAP)",
     )
     parser.add_argument(
         "--iou",
         type=float,
-        default=0.60,
-        help="Nguong NMS IoU (mac dinh: 0.60)",
+        default=0.55,
+        help="Nguong NMS IoU (mac dinh: 0.55)",
     )
     parser.add_argument(
         "--max_det",
         type=int,
-        default=100,
-        help="So luong bounding box toi da moi anh (mac dinh: 100)",
+        default=30,
+        help="So luong bounding box toi da moi anh (mac dinh: 30)",
     )
     parser.add_argument(
         "--device",
@@ -89,7 +89,7 @@ def main():
     os.chdir(base_dir)
 
     print("=" * 60)
-    print("SUY LUAN DETECTION YOLO11-MICRO VA GHEP FILE SUBMISSION")
+    print("SUY LUAN DETECTION YOLO11-MICRO BAN V3 VA GHEP FILE SUBMISSION")
     print("=" * 60)
 
     sample_sub_path = base_dir / "data" / "sample_submission.csv"
@@ -123,8 +123,7 @@ def main():
 
     print(f"[+] CHECKPOINT DUOC SU DUNG: {weights_path}")
 
-    # 3. Chay suy luan voi cau hinh toi uu Recall cho mAP50
-    # imgsz=160, conf=0.001, iou=0.60, max_det=100, augment=True
+    # 3. Chay suy luan voi cau hinh chuan Ban V3 (imgsz=160, conf=0.08, iou=0.55, max_det=30, augment=True)
     device = args.device
     if device == 0 and not torch.cuda.is_available():
         print("[!] CUDA KHONG KHA DUNG, CHUYEN SANG CPU!")
@@ -133,7 +132,7 @@ def main():
     print(f"[+] LOAD MODEL YOLO TU: {weights_path} (DEVICE={device})...")
     model = YOLO(str(weights_path))
 
-    print(f"[+] CAU HINH SUY LUAN: IMGSZ={args.imgsz}, CONF={args.conf}, IOU={args.iou}, MAX_DET={args.max_det}, AUGMENT=TRUE, DEVICE={device}")
+    print(f"[+] CAU HINH SUY LUAN BAN V3: IMGSZ={args.imgsz}, CONF={args.conf}, IOU={args.iou}, MAX_DET={args.max_det}, AUGMENT=TRUE, DEVICE={device}")
     print(f"[+] DANG DU DOAN DETECTION TREN TOAN BO ANH TAI: {test_img_dir}...")
 
     detection_preds = {}
