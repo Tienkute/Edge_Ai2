@@ -9,14 +9,14 @@ def parse_args():
     parser.add_argument(
         "--weights",
         type=str,
-        default="runs/yolo11_micro_esp32/weights/best.pt",
+        default="runs/yolo11_micro_esp32_v6/weights/best.pt",
         help="Duong dan den file trong so best.pt cua yolo11_micro",
     )
     parser.add_argument(
         "--imgsz",
         type=int,
-        default=160,
-        help="Kich thuoc anh dau vao (mac dinh: 160 cho ESP32-S3)",
+        default=320,
+        help="Kich thuoc anh dau vao (mac dinh: 320 cho ESP32-S3)",
     )
     parser.add_argument(
         "--data",
@@ -39,12 +39,21 @@ def main():
         weights_path = base_dir / weights_path
 
     if not weights_path.exists():
-        print(f"[!] KHONG TIM THAY TRONG SO TAI: {weights_path}")
-        print("[!] VUI LONG HUAN LUYEN TRUOC HOAC TRUYEN DUONG DAN QUA THAM SO --weights")
-        return
+        fallback_candidates = [
+            base_dir / "yolo11_micro_best.pt",
+            base_dir / "runs" / "yolo11_micro_esp32" / "weights" / "best.pt",
+        ]
+        chosen = next((p for p in fallback_candidates if p.exists()), None)
+        if chosen:
+            print(f"[!] KHONG TIM THAY: {weights_path}, CHUYEN SANG DUNG: {chosen}")
+            weights_path = chosen
+        else:
+            print(f"[!] KHONG TIM THAY TRONG SO TAI: {weights_path}")
+            print("[!] VUI LONG HUAN LUYEN TRUOC HOAC TRUYEN DUONG DAN QUA THAM SO --weights")
+            return
 
     print("=" * 60)
-    print("[+] BAT DAU XUAT MO HINH YOLO11-MICRO CHO ESP32-S3")
+    print("[+] BAT DAU XUAT MO HINH YOLO11-MICRO CHO ESP32-S3 (BAN V6 - 320PX)")
     print(f"[+] TRONG SO DAU VAO: {weights_path}")
     print(f"[+] KICH THUOC ANH (IMGSZ): {args.imgsz}")
     print("=" * 60)
@@ -52,8 +61,8 @@ def main():
     # Load model da huan luyen
     model = YOLO(str(weights_path))
 
-    # 1. Xuat dinh dang ONNX
-    print("[+] DANG XUAT DINH DANG ONNX (IMGSZ=160, SIMPLIFY=TRUE, OPSET=12)...")
+    # 1. Xuat dinh dang ONNX (imgsz=320, simplify=True, opset=12)
+    print(f"[+] DANG XUAT DINH DANG ONNX (IMGSZ={args.imgsz}, SIMPLIFY=TRUE, OPSET=12)...")
     try:
         onnx_file = model.export(
             format="onnx",
@@ -66,7 +75,7 @@ def main():
         print(f"[!] LOI KHI XUAT ONNX: {e}")
 
     # 2. Xuat dinh dang TFLite INT8 cho ESP32-S3
-    print("[+] DANG XUAT DINH DANG TFLITE INT8 (IMGSZ=160, INT8=TRUE)...")
+    print(f"[+] DANG XUAT DINH DANG TFLITE INT8 (IMGSZ={args.imgsz}, INT8=TRUE)...")
     try:
         tflite_file = model.export(
             format="tflite",

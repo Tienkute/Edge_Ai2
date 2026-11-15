@@ -11,46 +11,44 @@ def main():
     os.chdir(base_dir)
 
     print("=" * 60)
-    print("[+] BAT DAU HUAN LUYEN YOLO11-MICRO BAN V3 (HOI TU SAU 160X160)")
+    print("[+] BAT DAU HUAN LUYEN YOLO11-MICRO BAN V6 (320PX PRETRAINED TRANSFER)")
     print("=" * 60)
 
     # 1. Kiem tra thiet bi
     device = 0 if torch.cuda.is_available() else "cpu"
     print(f"[+] THIET BI HUAN LUYEN: {device}")
 
-    # 2. Khoi tao model tu file yaml micro (khong load pretrained .pt de giu nguyen kien truc)
+    # 2. Khoi tao model tu yaml va load trong so khoi tao tu yolo11n.pt
     model_yaml = "models/yolo11_micro.yaml"
+    pretrained_weights = "yolo11n.pt"
     print(f"[+] KHOI TAO MODEL TU: {model_yaml}")
-    model = YOLO(model_yaml)
+    print(f"[+] LOAD TRONG SO KHOI TAO TU: {pretrained_weights}")
+    model = YOLO(model_yaml).load(pretrained_weights)
 
-    # 3. Thong bao cau hinh huan luyen Ban V3
-    print("[+] CAU HINH CHIEN THUAT BAN V3:")
-    print("    - imgsz = 160 (xuyen suot 300 epochs, khong train 320px gay soc mo hinh)")
-    print("    - epochs = 300, patience = 40, batch = 64")
-    print("    - optimizer = AdamW, lr0 = 0.003, lrf = 0.01, cos_lr = True")
-    print("    - loss weights: box = 12.0, dfl = 2.0, cls = 0.8 (ep khung bao that khit)")
-    print("    - augmentations: mosaic = 1.0, mixup = 0.1, degrees = 10.0, scale = 0.5, close_mosaic = 30")
+    # 3. Thong bao cau hinh huan luyen Ban V6
+    print("[+] CAU HINH CHIEN THUAT BAN V6:")
+    print("    - imgsz = 320 (toi da hoa do phan giai cho chip ESP32-S3)")
+    print("    - epochs = 300, patience = 50, batch = 64")
+    print("    - optimizer = auto (mac dinh), cos_lr = True")
+    print("    - loss weights: box = 8.5, cls = 0.7")
+    print("    - augmentations: mosaic = 1.0, mixup = 0.1, degrees = 10.0, scale = 0.5, close_mosaic = 40, amp = True")
 
     # 4. Tien hanh train
-    run_name = "yolo11_micro_esp32_v3"
+    run_name = "yolo11_micro_esp32_v6"
     results = model.train(
         data="dataset.yaml",
         epochs=300,
-        patience=40,
-        imgsz=160,
+        patience=50,
+        imgsz=320,
         batch=64,
-        optimizer="AdamW",
-        lr0=0.003,
-        lrf=0.01,
         cos_lr=True,
-        box=12.0,
-        dfl=2.0,
-        cls=0.8,
+        box=8.5,
+        cls=0.7,
         mosaic=1.0,
         mixup=0.1,
         degrees=10.0,
         scale=0.5,
-        close_mosaic=30,
+        close_mosaic=40,
         device=device,
         project="runs",
         name=run_name,
@@ -64,7 +62,7 @@ def main():
     root_weights = base_dir / "yolo11_micro_best.pt"
 
     print("=" * 60)
-    print("[+] HUAN LUYEN BAN V3 HOAN TAT!")
+    print("[+] HUAN LUYEN BAN V6 HOAN TAT!")
     print(f"[+] THU MUC LUU KET QUA: {save_dir}")
     if best_weights.exists():
         print(f"[+] TRONG SO TOT NHAT (best.pt): {best_weights}")
