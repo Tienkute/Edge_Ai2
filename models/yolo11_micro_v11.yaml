@@ -10,7 +10,7 @@ backbone:
   - [-1, 2, C3k2, [512, False, 0.25]]
   - [-1, 1, Conv, [512, 3, 2]]  # 5-P4/16
   - [-1, 2, C3k2, [512, True]]
-  - [-1, 1, CBAM, [512]]  # 7-Attention
+  - [-1, 1, C2PSA, [512]]  # 7-Spatial Attention chuan YOLO11
 head:
   - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
   - [[-1, 4], 1, Concat, [1]]  # cat backbone P3
