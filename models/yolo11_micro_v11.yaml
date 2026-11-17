@@ -1,7 +1,7 @@
 nc: 7
 scales:
   micro: [0.33, 0.15, 512]  # depth, width, max_channels
-activation: Mish
+activation: nn.Mish()
 backbone:
   - [-1, 1, Conv, [64, 3, 2]]  # 0-P1/2
   - [-1, 1, Conv, [128, 3, 2]]  # 1-P2/4
